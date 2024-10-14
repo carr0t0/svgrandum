@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카메라 라이브 비디오에 원 효과 적용 (24 FPS)</title>
+    <style>
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #videoContainer {
+            display: flex;
+            justify-content: center; /* 좌우 정렬 */
+            margin-top: 20px;
+        }
+
+        #originalVideo, #transformedSVG {
+            width: 40%; /* 화면 가로 40% 크기 설정 */
+            border: 1px solid black;
+            margin: 0 10px; /* 비디오 사이의 여백 */
+        }
+
+        #svgCanvas {
+            margin-top: 20px;
+        }
+
+        .input-container {
+            margin-top: 10px;
+        }
+
+        .input-description {
+            font-size: 0.9em;
+            color: gray;
+        }
+
+        #downloadButton {
+            margin-top: 10px;
+        }
+
+        .fullscreen-button {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="videoContainer">
+            <video id="originalVideo" autoplay></video> <!-- 원본 비디오 -->
+            <svg id="transformedSVG"></svg> <!-- 변환된 영상 -->
+        </div>
+
+        <div id="originalVideoContainer">
+            <button class="fullscreen-button" id="fullscreenOriginalButton">원본 비디오 전체화면</button>
+        </div>
+        <div id="transformedSVGContainer">
+            <button class="fullscreen-button" id="fullscreenTransformedButton">변환된 영상 전체화면</button>
+        </div>
+
+        <div class="input-container">
+            <input type="number" id="stepCount" placeholder="단계 수" min="1" value="5">
+            <div class="input-description">원 크기의 단계를 설정합니다 (기본값: 5).</div>
+        </div>
+
+        <div class="input-container">
+            <input type="number" id="sizeFactor" placeholder="크기 조정 단위" step="0.1" value="0.7">
+            <div class="input-description">원 크기를 조정하는 비율입니다 (기본값: 0.7).</div>
+        </div>
+
+        <div class="input-container">
+            <input type="number" id="pixelBlockSize" placeholder="픽셀 블록 크기" min="1" value="5">
+            <div class="input-description">각 블록의 크기 (픽셀 단위)를 설정합니다 (기본값: 5).</div>
+        </div>
+
+        <button id="startButton">비디오 시작</button>
+        <button id="downloadButton">SVG 다운로드</button>
+    </div>
+
+    <script>
+        const svgCanvas = document.getElementById('transformedSVG');
+        const video = document.getElementById('originalVideo');
+        const stepCountInput = document.getElementById('stepCount');
+        const sizeFactorInput = document.getElementById('sizeFactor');
+        const pixelBlockSizeInput = document.getElementById('pixelBlockSize'); 
+        const startButton = document.getElementById('startButton');
+        const downloadButton = document.getElementById('downloadButton'); 
+
+        // 카메라 접근 권한 요청 및 비디오 스트림 설정
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream; // 비디오 요소에 스트림 설정
+            })
+            .catch(err => {
+                console.error("카메라에 접근할 수 없습니다: ", err);
+            });
+
+        // 비디오 시작 버튼 클릭 시
+        startButton.addEventListener('click', function() {
+            svgCanvas.innerHTML = ''; // 이전 결과 초기화
+            // 24프레임으로 애니메이션을 설정
+            setInterval(() => {
+                captureAndDraw(); // 프레임 캡처 및 원 그리기
+            }, 1000 / 24); // 24 FPS
+
+            // 매 초마다 색상 업데이트
+            setInterval(() => {
+                updateColors(); // 색상 업데이트
+            }, 1000); // 1초마다 색상 변경
+        });
+
+        // SVG 다운로드 기능
+        downloadButton.addEventListener('click', function() {
+            const svgData = new XMLSerializer().serializeToString(svgCanvas); // SVG 내용을 문자열로 변환
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' }); // Blob 객체 생성
+            const url = URL.createObjectURL(blob); // URL 생성
+
+            const a = document.createElement('a'); // 다운로드 링크 생성
+            a.href = url;
+            a.download = 'result.svg'; // 다운로드 파일 이름
+            document.body.appendChild(a);
+            a.click(); // 링크 클릭으로 다운로드
+            document.body.removeChild(a); // 링크 제거
+            URL.revokeObjectURL(url); // URL 해제
+        });
+
+        // 랜덤 색상 생성 함수
+        function getRandomColor() {
+            return `#${Math.floor(Math.random()*16777215).toString(16)}`; // 16진수 색상 생성
+        }
+
+        // 원의 크기별 색상 저장 객체
+        const colorMap = {};
+
+        // 색상 업데이트 함수
+        function updateColors() {
+            // 현재 SVG에 있는 원들에 대해 색상 업데이트
+            const circles = svgCanvas.querySelectorAll("circle");
+            circles.forEach(circle => {
+                const radius = circle.getAttribute("r"); // 현재 원의 반지름 가져오기
+                if (!colorMap[radius]) {
+                    colorMap[radius] = getRandomColor(); // 새로운 랜덤 색상 생성
+                }
+                circle.setAttribute("fill", colorMap[radius]); // 같은 반지름의 원에 동일 색상 적용
+            });
+        }
+
+        // 프레임 캡처 및 원 그리기 함수
+        function captureAndDraw() {
+            const pixelBlockSize = parseInt(pixelBlockSizeInput.value) || 5; // 픽셀 블록 크기
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // 비디오에서 프레임을 캡처
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const image = new Image();
+            image.src = canvas.toDataURL(); // 비디오 프레임을 이미지로 변환
+
+            // 원 그리기 함수 호출
+            drawCirclesBasedOnBrightness(pixelBlockSize, image);
+        }
+
+        // 픽셀의 밝기를 기준으로 원형을 그리는 함수
+        function drawCirclesBasedOnBrightness(squareSize, image) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // 이미지 데이터를 얻기 위해 임시 캔버스 사용
+            canvas.width = image.width;
+            canvas.height = image.height;
+            ctx.drawImage(image, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // 단계 수와 크기 조정 단위를 입력받아 배열 생성
+            const stepCount = parseInt(stepCountInput.value) || 5; // 기본값 5
+            const sizeFactor = parseFloat(sizeFactorInput.value) || 0.7; // 기본값 0.7
+            const radiusSteps = Array.from({ length: stepCount }, (_, i) => (stepCount - i) * sizeFactor); // 크기를 단계 수에 맞춰 조정
+            const numSteps = radiusSteps.length; // 단계 수
+
+            // 이미지 크기만큼 반복하면서 squareSize 단위로 밝기를 분석
+            for (let x = 0; x < canvas.width; x += squareSize) {
+                for (let y = 0; y < canvas.height; y += squareSize) {
+                    // squareSize 영역의 평균 밝기 구하기
+                    let totalBrightness = 0;
+                    let count = 0;
+
+                    for (let i = 0; i < squareSize; i++) { // squareSize 블록의 행
+                        for (let j = 0; j < squareSize; j++) { // squareSize 블록의 열
+                            const pixelIndex = ((y + j) * canvas.width + (x + i)) * 4; // 현재 픽셀의 인덱스 계산
+                            const r = data[pixelIndex];     // Red 값
+                            const g = data[pixelIndex + 1]; // Green 값
+                            const b = data[pixelIndex + 2]; // Blue 값
+                            
+                            // 픽셀 밝기 = (R + G + B) / 3
+                            const brightness = (r + g + b) / 3;
+                            totalBrightness += brightness; // 평균 밝기 누적
+                            count++; // 픽셀 수 증가
+                        }
+                    }
+
+                    const averageBrightness = totalBrightness / count; // 평균 밝기
+                    const brightnessStep = Math.floor((averageBrightness / 255) * (numSteps - 1)); // 밝기를 단계로 변환
+                    const circleRadius = radiusSteps[Math.min(brightnessStep, numSteps - 1)]; // 최대 단계를 넘지 않도록
+
+                    // 원의 중심 좌표
+                    const cx = x + squareSize / 2;
+                    const cy = y + squareSize / 2;
+
+                    // SVG 원 생성
+                    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    circle.setAttribute("cx", cx);
+                    circle.setAttribute("cy", cy);
+                    circle.setAttribute("r", circleRadius); // 원의 반지름
+                    circle.setAttribute("fill", "black"); // 원의 색상 초기값
+                    circle.setAttribute("stroke", "none"); // 테두리 없음
+
+                    svgCanvas.appendChild(circle); // SVG 캔버스에 원 추가
+                }
+            }
+        }
+
+        // 전체화면 버튼 이벤트 추가
+        document.getElementById('fullscreenOriginalButton').addEventListener('click', function() {
+            openFullscreen(video); // 원본 비디오 전체화면으로 열기
+        });
+
+        document.getElementById('fullscreenTransformedButton').addEventListener('click', function() {
+            const svgWindow = window.open("", "SVG 변환", "width=800,height=600");
+            svgWindow.document.write("<html><head><title>변환된 영상</title></head><body>");
+            svgWindow.document.write(svgCanvas.outerHTML); // SVG를 새 창에 표시
+            svgWindow.document.close();
+            svgWindow.document.body.onload = function() {    
+                openFullscreen(svgWindow.document.body); // 새 창을 전체화면으로 전환
+            };
+        });
+
+        // 전체화면 함수
+        function openFullscreen(elem) {
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.mozRequestFullScreen) { // Firefox
+                elem.mozRequestFullScreen();
+            } else if (elem.webkitRequestFullscreen) { // Chrome, Safari 및 Opera
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { // IE/Edge
+                elem.msRequestFullscreen();
+            }
+        }
+    </script>
+</body>
+</html>
