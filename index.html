@@ -104,10 +104,8 @@
                 captureAndDraw(); // 프레임 캡처 및 원 그리기
             }, 1000 / 24); // 24 FPS
 
-            // 매 초마다 색상 업데이트
-            setInterval(() => {
-                updateColors(); // 색상 업데이트
-            }, 1000); // 1초마다 색상 변경
+            // 비디오 시작 버튼 클릭 시 색상 업데이트
+            updateColors(); // 색상 업데이트
         });
 
         // SVG 다운로드 기능
@@ -222,6 +220,7 @@
                     svgCanvas.appendChild(circle); // SVG 캔버스에 원 추가
                 }
             }
+            updateColors(); // 색상 업데이트
         }
 
         // 전체화면 버튼 이벤트 추가
@@ -234,7 +233,7 @@
             svgWindow.document.write("<html><head><title>변환된 영상</title></head><body>");
             svgWindow.document.write(svgCanvas.outerHTML); // SVG를 새 창에 표시
             svgWindow.document.close();
-            svgWindow.document.body.onload = function() {    
+            svgWindow.document.body.onload = function() {
                 openFullscreen(svgWindow.document.body); // 새 창을 전체화면으로 전환
             };
         });
